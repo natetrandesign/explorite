@@ -1,0 +1,16 @@
+{
+  "name": "Explorite — Told like a secret",
+  "short_name": "Explorite",
+  "description": "Local-verified travel experiences in the city you just landed in. Discover, evaluate, coordinate.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14100D",
+  "theme_color": "#14100D",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
