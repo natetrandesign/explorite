@@ -3,64 +3,27 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Explorite — Travel like you were told a secret</title>
-  <meta name="description" content="Explorite finds trusted, local-verified experiences in the city you just landed in. Discover, evaluate, coordinate — in one place." />
-  <meta name="theme-color" content="#14100D" />
+  <title>Explorite — The field journal for travelers who hate tourist traps</title>
+  <meta name="description" content="Explorite is a vetted field journal of local experiences. Every listing walked, eaten, or rowed by a real person before it earns a page. Book it, then get your crew to actually show up." />
+  <meta name="theme-color" content="#F6F3EC" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Explorite" />
-  <meta property="og:title" content="Explorite" />
-  <meta property="og:description" content="Trusted local experiences, wherever you land." />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta property="og:title" content="Explorite — Field Journal" />
+  <meta property="og:description" content="Vetted local experiences. Booked in minutes. Crews coordinated without the group-chat spiral." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://images.unsplash.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Karla:ital,wght@0,400..700;1,400..700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- Ambient baroque backdrop (desktop) -->
-  <div class="ambient" aria-hidden="true">
-    <div class="ambient-glow ambient-glow--gold"></div>
-    <div class="ambient-glow ambient-glow--oxblood"></div>
-    <div class="ambient-brand">
-      <span class="ambient-word">Explorite</span>
-      <span class="ambient-sub">Travel like you were told a secret.</span>
-    </div>
-  </div>
-
-  <!-- App shell -->
-  <div class="shell" id="shell">
-    <main id="view" class="view" aria-live="polite"></main>
-
-    <!-- Tab bar -->
-    <nav class="tabbar" id="tabbar" aria-label="Primary" hidden>
-      <button class="tab" data-tab="discover" aria-label="Discover">
-        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm4.2 5.8-2.3 5.4a1.5 1.5 0 0 1-.8.8l-5.3 2.2 2.2-5.3a1.5 1.5 0 0 1 .8-.8l5.4-2.3Z"/><circle cx="12" cy="12" r="1.4" fill="var(--ink)"/></svg>
-        <span>Discover</span>
-      </button>
-      <button class="tab" data-tab="trips" aria-label="Trips">
-        <svg viewBox="0 0 24 24"><path d="M6 4h12a1 1 0 0 1 1 1v15.3a.7.7 0 0 1-1.1.6L12 17.5l-5.9 3.4A.7.7 0 0 1 5 20.3V5a1 1 0 0 1 1-1Z"/></svg>
-        <span>Trips</span>
-      </button>
-      <button class="tab" data-tab="messages" aria-label="Messages">
-        <svg viewBox="0 0 24 24"><path d="M4 4h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H8.4L4.7 20.7A1 1 0 0 1 3 20V5a1 1 0 0 1 1-1Z"/></svg>
-        <span>Messages</span>
-        <i class="tab-dot" aria-hidden="true"></i>
-      </button>
-      <button class="tab" data-tab="profile" aria-label="Profile">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.6 3.6-6 8-6s8 2.4 8 6"/></svg>
-        <span>You</span>
-      </button>
-    </nav>
-  </div>
-
-  <!-- Booking sheet mount -->
+  <div id="app" aria-live="polite"></div>
   <div id="sheet-root"></div>
-  <!-- Toast mount -->
   <div id="toast-root" aria-live="assertive"></div>
-
-  <script src="app.js" defer></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script defer src="app.js"></script>
 </body>
 </html>
