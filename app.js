@@ -289,11 +289,10 @@ async function screenDetail(slug) {
     openReviewSheet(e);
   };
 
-  // sticky bar appears after hero scrolls away
+  // sticky reserve bar — always present on detail (Airbnb mobile pattern),
+  // slides in after first paint
   const bar = document.getElementById('reserve-bar');
-  const onScroll = () => bar.classList.toggle('show', window.scrollY > 220);
-  onScroll();
-  window.addEventListener('scroll', onScroll, { passive: true });
+  requestAnimationFrame(() => bar.classList.add('show'));
 
   // reviews
   const { data: reviews } = await sb.from('explorite_reviews').select('*').eq('experience_id', e.id).order('created_at', { ascending: false }).limit(30);
