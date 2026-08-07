@@ -343,7 +343,7 @@ function next14() {
   }
   return out;
 }
-const isoDate = (d) => d.toISOString().substring(0, 10);
+const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 function openBookingSheet(e) {
   if (!requireAuth(`#/x/${e.slug}`)) return;
