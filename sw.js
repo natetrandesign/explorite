@@ -1,5 +1,5 @@
 /* Explorite v2 service worker — app shell cache, network-first for data */
-const SHELL = 'explorite-v3-shell-1';
+const SHELL = 'explorite-v3-shell-2';
 const SHELL_FILES = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'favicon.svg'];
 
 self.addEventListener('install', (e) => {

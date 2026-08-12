@@ -871,13 +871,14 @@ async function screenTrip(id) {
     const ink = dayInk(d);
     const fixed = bookedOf(d);
     const stops = inDay(d);
+    let nStop = 0;
     const seq = [
       ...fixed.map(f => ({ geo: geoOf(f.e), html: fixedRow(f.b, f.e) })),
-      ...stops.map((it, i) => ({ geo: it.kind === 'note' ? null : geoOf(it), html: stopRow(it, i + 1, ink) })),
+      ...stops.map((it) => ({ geo: it.kind === 'note' ? null : geoOf(it), html: stopRow(it, it.kind === 'note' ? 0 : ++nStop, ink) })),
     ];
-    let rows = '', prevGeo = null;
+    let rows = '', prevGeo = null, walkKm = 0;
     seq.forEach(s => {
-      if (s.geo && prevGeo) { const w = walkLine(prevGeo, s.geo); if (w) rows += `<div class="walkline">↓ ${w}</div>`; }
+      if (s.geo && prevGeo) { const w = walkLine(prevGeo, s.geo); if (w) rows += `<div class="walkline">↓ ${w}</div>`; walkKm += havKm(prevGeo, s.geo); }
       rows += s.html;
       if (s.geo) prevGeo = s.geo;
     });
@@ -889,7 +890,7 @@ async function screenTrip(id) {
         <span class="day-dot"></span>
         <span class="day-n">Day ${d + 1}</span>
         <span class="day-date">${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-        <span class="day-sub">${subtotal ? money(subtotal) : ''}</span>
+        <span class="day-sub">${[subtotal ? money(subtotal) : '', walkKm >= 0.1 ? `≈ ${walkKm < 10 ? walkKm.toFixed(1) : Math.round(walkKm)} km` : ''].filter(Boolean).join(' · ')}</span>
       </div>
       <input class="day-intent" data-day="${d}" maxlength="120" placeholder="The shape of this day…" value="${esc(dayNotes[d] || '')}" />
       ${rows || '<div class="day-empty">Nothing filed yet. Pull from the shortlist or add a stop.</div>'}
@@ -927,7 +928,7 @@ async function screenTrip(id) {
 
     <div class="detail-section" style="padding-top:18px">
       <span class="kicker dark">The shortlist — not yet scheduled</span>
-      <div class="sl-wrap">${shortlist.map((it, i) => stopRow(it, i + 1, dayInk(null))).join('') ||
+      <div class="sl-wrap">${(() => { let n = 0; return shortlist.map((it) => stopRow(it, it.kind === 'note' ? 0 : ++n, dayInk(null))).join(''); })() ||
         '<div class="day-empty" style="border:0;padding-left:0">Dog-ear pages from the journal or add your own finds. They wait here until they earn a day.</div>'}</div>
       <button class="btn-ghost sm" data-add="sl" style="margin-top:8px">+ Add an idea</button>
     </div>
@@ -980,8 +981,8 @@ async function screenTrip(id) {
     const d = Number(b.dataset.opt);
     b.disabled = true;
     const anchor = bookedOf(d).map(f => geoOf(f.e)).find(Boolean) || null;
-    await optimizeDay(inDay(d), anchor);
-    toast('Reordered for the shortest walk.');
+    const timedAware = await optimizeDay(inDay(d), anchor);
+    toast(timedAware ? 'Reordered around your timed stops.' : 'Reordered for the shortest walk.');
     reload();
   });
   $app.querySelectorAll('[data-item]').forEach(row => row.onclick = (ev) => {
@@ -1034,17 +1035,48 @@ async function optimizeDay(stops, anchor) {
   const notes = stops.filter(s => s.kind === 'note');
   const geo = real.filter(s => geoOf(s));
   const rest = real.filter(s => !geoOf(s));
-  if (geo.length < 2) return;
-  let cur = anchor || geoOf(geo[0]);
-  const pool = geo.slice(); const ordered = [];
-  while (pool.length) {
-    let bi = 0, bd = Infinity;
-    pool.forEach((p, i) => { const d = havKm(cur, geoOf(p)); if (d < bd) { bd = d; bi = i; } });
-    const pick = pool.splice(bi, 1)[0];
-    ordered.push(pick); cur = geoOf(pick);
+  if (geo.length < 2) return false;
+  const timed = geo.filter(s => s.start_time).sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)));
+  const untimed = geo.filter(s => !s.start_time);
+  let ordered;
+  if (timed.length) {
+    /* Timed stops are appointments — they keep chronological order.
+       Untimed stops slot in wherever they add the least walking (cheapest insertion).
+       An evening appointment (16:00+) is the last page of the day: nothing files after it. */
+    ordered = timed.slice();
+    const dayEnds = String(timed[timed.length - 1].start_time) >= '16:00' ? timed[timed.length - 1] : null;
+    const pool = untimed.slice();
+    while (pool.length) {
+      let best = { cost: Infinity, pi: 0, slot: 0 };
+      pool.forEach((p, pi) => {
+        const g = geoOf(p);
+        const maxSlot = dayEnds ? ordered.indexOf(dayEnds) : ordered.length;
+        for (let slot = 0; slot <= maxSlot; slot++) {
+          const prev = slot > 0 ? geoOf(ordered[slot - 1]) : anchor;
+          const next = slot < ordered.length ? geoOf(ordered[slot]) : null;
+          let cost = 0;
+          if (prev && next) cost = havKm(prev, g) + havKm(g, next) - havKm(prev, next);
+          else if (prev) cost = havKm(prev, g);
+          else if (next) cost = havKm(g, next);
+          if (cost < best.cost) best = { cost, pi, slot };
+        }
+      });
+      const [pick] = pool.splice(best.pi, 1);
+      ordered.splice(best.slot, 0, pick);
+    }
+  } else {
+    let cur = anchor || geoOf(geo[0]);
+    const pool = geo.slice(); ordered = [];
+    while (pool.length) {
+      let bi = 0, bd = Infinity;
+      pool.forEach((p, i) => { const d = havKm(cur, geoOf(p)); if (d < bd) { bd = d; bi = i; } });
+      const pick = pool.splice(bi, 1)[0];
+      ordered.push(pick); cur = geoOf(pick);
+    }
   }
   const final = [...ordered, ...rest, ...notes];
   await Promise.all(final.map((x, i) => sb.from('explorite_trip_items').update({ position: i }).eq('id', x.id)));
+  return timed.length > 0;
 }
 
 /* ---------- add stop sheet ---------- */

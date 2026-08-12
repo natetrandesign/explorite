@@ -24,7 +24,7 @@ translates each into the Field Journal language:
 2. **The map is a mirror** — every stop with coordinates appears instantly on "the spread" (Leaflet/OSM), numbered pins inked per day, dashed route lines.
 3. **The day is the unit of thought** — per-day blocks with an editable intent line, per-day subtotals.
 4. **Ideas before commitments** — "the shortlist" holds unscheduled finds until they earn a day.
-5. **The plan does arithmetic** — walking time between stops (haversine), day subtotals, one-tap nearest-neighbor "Optimize order".
+5. **The plan does arithmetic** — walking time between stops (haversine), per-day cost and on-foot distance subtotals, one-tap "Optimize order" that treats timed stops as fixed appointments and slots everything else in by cheapest insertion.
 6. **Collaboration is one link** — a share token renders a read-only "press copy" with map, no account needed (same pattern as crew-plan voting).
 7. **Money and logistics live inside the plan** — "the ledger" (budget bar, expenses, per-person split, bookings auto-counted) and a packing "kit list". Confirmed bookings auto-file into their day as fixed points.
 
