@@ -1,5 +1,5 @@
 /* Explorite v2 service worker — app shell cache, network-first for data */
-const SHELL = 'explorite-v2-shell-1';
+const SHELL = 'explorite-v3-shell-1';
 const SHELL_FILES = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'favicon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -26,9 +26,9 @@ self.addEventListener('fetch', (e) => {
         return cached || fresh;
       })
     );
-  } else if (url.hostname === 'images.unsplash.com' || url.hostname === 'fonts.gstatic.com' || url.hostname === 'fonts.googleapis.com' || url.hostname === 'cdn.jsdelivr.net') {
+  } else if (url.hostname === 'images.unsplash.com' || url.hostname === 'fonts.gstatic.com' || url.hostname === 'fonts.googleapis.com' || url.hostname === 'cdn.jsdelivr.net' || url.hostname.endsWith('cartocdn.com')) {
     e.respondWith(
-      caches.open('explorite-v2-assets').then((c) =>
+      caches.open('explorite-v3-assets').then((c) =>
         c.match(e.request).then((cached) => cached || fetch(e.request).then((res) => {
           if (res.ok) c.put(e.request, res.clone());
           return res;

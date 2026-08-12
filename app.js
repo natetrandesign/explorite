@@ -1,5 +1,5 @@
 /* ============================================================
-   EXPLORITE v2 — "Field Journal"
+   EXPLORITE v3 — "Field Journal / The Planner"
    Real app: Supabase auth, catalog, bookings, crew plans,
    host messaging. No framework, no build step.
    ============================================================ */
@@ -254,6 +254,12 @@ async function screenDetail(slug) {
       <button class="btn-ghost" data-msg>Message ${esc(firstName(e.host_name))}</button>
     </div>
 
+    <div class="detail-section">
+      <span class="kicker dark">Put it in the plan</span>
+      <p class="plan-pitch">Dog-earing is for someday. A trip is for dates. File this page into a day and the map does the math.</p>
+      <button class="btn-ghost" data-addtrip>+ Add to a trip</button>
+    </div>
+
     <div class="detail-section" id="reviews-block">
       <span class="kicker dark">From verified guests</span>
       <div id="reviews-inner"><div class="skel" style="height:110px;margin-top:14px"></div></div>
@@ -287,6 +293,10 @@ async function screenDetail(slug) {
   $app.querySelector('[data-write-review]').onclick = () => {
     if (!requireAuth(`#/x/${slug}`)) return;
     openReviewSheet(e);
+  };
+  $app.querySelector('[data-addtrip]').onclick = () => {
+    if (!requireAuth(`#/x/${slug}`)) return;
+    openAddToTripSheet(e);
   };
 
   // sticky reserve bar — always present on detail (Airbnb mobile pattern),
@@ -630,38 +640,106 @@ async function screenVote(token) {
 }
 
 /* ---------- trips ---------- */
+/* ============================================================
+   TRIP PLANNER (v3) — one trip, one document.
+   Wanderlog-informed UX: day blocks, map mirror, shortlist,
+   walk math, ledger, kit list, one-link share view.
+   ============================================================ */
+const DAY_INKS = ['#C0441F', '#33684B', '#B08215', '#2E4E6B', '#6B3352', '#4A5D23', '#7A3B2E', '#1F5F5B'];
+const dayInk = (i) => (i == null ? '#8C8471' : DAY_INKS[i % DAY_INKS.length]);
+const EXP_CATS = ['Lodging', 'Transit', 'Food', 'Tickets', 'Gear', 'Other'];
+const CITY_FALLBACK = { 'Florence': [43.7696, 11.2558], 'Kyoto': [35.0116, 135.7681], 'Mexico City': [19.4326, -99.1332] };
+const KIT_SEED = ['Passport / ID', 'Chargers + adapter', 'Offline maps downloaded', 'Comfortable shoes', 'Rain layer', 'Meds + basics', 'Power bank', 'Copies of tickets'];
+
+function tripDayCount(t) {
+  const a = new Date(t.start_date + 'T12:00:00'), b = new Date(t.end_date + 'T12:00:00');
+  return Math.min(14, Math.max(1, Math.round((b - a) / 86400000) + 1));
+}
+function tripDayDate(t, i) { const d = new Date(t.start_date + 'T12:00:00'); d.setDate(d.getDate() + i); return d; }
+function dayIdxOf(t, iso) { return Math.round((new Date(iso + 'T12:00:00') - new Date(t.start_date + 'T12:00:00')) / 86400000); }
+function cityCover(city) { const e = S.experiences.find(x => x.city === city && x.hero_img); return e ? e.hero_img : ''; }
+function havKm(a, b) {
+  const R = 6371, toR = (x) => x * Math.PI / 180;
+  const dLat = toR(b.lat - a.lat), dLng = toR(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function walkLine(a, b) {
+  if (!a || !b || a.lat == null || b.lat == null) return '';
+  const km = havKm(a, b);
+  if (km > 3.2) return `≈ ${km.toFixed(1)} km — ride it`;
+  const min = Math.max(1, Math.round((km / 4.5) * 60));
+  return `≈ ${min} min walk · ${km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(1) + ' km'}`;
+}
+function geoOf(x) { return (x && x.lat != null && x.lng != null) ? { lat: x.lat, lng: x.lng } : null; }
+function shareTripLink(t) { return location.origin + location.pathname + '#/j/' + t.share_token; }
+
+async function loadTripBundle(id) {
+  const [tRes, iRes, xRes, cRes, bRes] = await Promise.all([
+    sb.from('explorite_trips').select('*').eq('id', id).maybeSingle(),
+    sb.from('explorite_trip_items').select('*').eq('trip_id', id).order('position', { ascending: true }).order('created_at', { ascending: true }),
+    sb.from('explorite_trip_expenses').select('*').eq('trip_id', id).order('created_at', { ascending: true }),
+    sb.from('explorite_trip_checklist').select('*').eq('trip_id', id).order('position', { ascending: true }).order('created_at', { ascending: true }),
+    sb.from('explorite_bookings').select('*').eq('status', 'confirmed'),
+  ]);
+  const t = tRes.data;
+  if (!t) return null;
+  const bookings = (bRes.data || []).filter(b => {
+    if (b.on_date < t.start_date || b.on_date > t.end_date) return false;
+    const e = S.experiences.find(x => x.id === b.experience_id);
+    return e && e.city === t.city;
+  });
+  return { t, items: iRes.data || [], expenses: xRes.data || [], checks: cRes.data || [], bookings };
+}
+
+/* ---------- trips home (planner) ---------- */
 async function screenTrips() {
   if (!requireAuth('#/trips')) return;
   window.scrollTo(0, 0);
   $app.innerHTML = `
-    <div class="page-head"><span class="kicker">Stubs and proof</span><h1 class="display">Trips</h1><hr class="rule dark"/></div>
+    <div class="page-head"><span class="kicker">One trip, one document</span><h1 class="display">Trips</h1><hr class="rule dark"/></div>
     <div id="trips-list" class="section-pad"><div class="skel skel-row"></div></div>
   ` + tabbar('trips');
   bindCommon();
-  const { data: bookings } = await sb.from('explorite_bookings').select('*').order('on_date', { ascending: true });
+  const [{ data: trips }, { data: bookings }] = await Promise.all([
+    sb.from('explorite_trips').select('*, explorite_trip_items(id)').order('start_date', { ascending: true }),
+    sb.from('explorite_bookings').select('*').order('on_date', { ascending: true }),
+  ]);
   const list = document.getElementById('trips-list');
   if (!list) return;
-  if (!bookings || !bookings.length) {
-    list.innerHTML = `<div class="empty" style="margin:26px 0">
-      <h4>Nothing booked yet</h4>
-      <p>The cost of a bad pick on a short trip is high. That's why every page in the journal got vetted first. Go pick one.</p>
-      <button class="btn-primary" data-go="/">Open the journal</button>
-    </div>`;
-    bindCommon();
-    return;
-  }
   const today = isoDate(new Date());
-  const up = bookings.filter(b => b.on_date >= today && b.status === 'confirmed');
-  const past = bookings.filter(b => b.on_date < today || b.status !== 'confirmed');
-  const block = (items) => items.map(b => {
-    const e = S.experiences.find(x => x.id === b.experience_id) || { title: 'Experience', city: '', meeting_point: '' };
+  const up = (bookings || []).filter(b => b.on_date >= today && b.status === 'confirmed');
+  const past = (bookings || []).filter(b => b.on_date < today || b.status !== 'confirmed');
+  const tripCard = (t) => {
+    const n = tripDayCount(t);
+    const stops = (t.explorite_trip_items || []).length;
+    const cover = t.cover_img || cityCover(t.city);
+    return `<button class="trip-card" data-go="/t/${t.id}">
+      ${cover ? `<img src="${cover.replace('w=1600', 'w=500')}" alt="" />` : ''}
+      <div class="trip-card-main">
+        <span class="kicker">${esc(t.city)} · ${dfmt(t.start_date)} – ${dfmt(t.end_date)}</span>
+        <h4>${esc(t.title)}</h4>
+        <div class="m">${n} ${n > 1 ? 'days' : 'day'} · ${stops} ${stops === 1 ? 'stop' : 'stops'} on paper</div>
+      </div>
+      <span class="trip-card-arrow">→</span>
+    </button>`;
+  };
+  const stubBlock = (items) => items.map(b => {
+    const e = S.experiences.find(x => x.id === b.experience_id) || { title: 'Experience', city: '', meeting_point: '', slug: '' };
     return ticketHtml(e, b) + (b.status === 'confirmed' && b.on_date >= today
       ? `<div style="display:flex;gap:8px;margin:-2px 0 8px"><button class="btn-ghost" data-cancel="${b.id}" style="margin-top:6px">Cancel</button><button class="btn-ghost" data-go="/x/${e.slug}" style="margin-top:6px">View page</button></div>` : '');
   }).join('');
   list.innerHTML = `
-    ${up.length ? `<span class="kicker dark" style="display:block;padding-top:18px">Upcoming</span>${block(up)}` : ''}
-    ${past.length ? `<span class="kicker dark" style="display:block;padding-top:22px">The archive</span>${block(past)}` : ''}
+    ${(trips && trips.length) ? trips.map(tripCard).join('') : `<div class="empty" style="margin:20px 0 6px">
+      <h4>No plans on paper yet</h4>
+      <p>A trip is one document: the shortlist, the days, the map, the money. Start one and the journal does the math.</p>
+    </div>`}
+    <button class="btn-primary wide" data-newtrip style="margin:16px 0 6px">Start a trip</button>
+    ${(up.length || past.length) ? '<div style="margin-top:26px"><hr class="rule"/></div>' : ''}
+    ${up.length ? `<span class="kicker dark" style="display:block;padding-top:18px">Ticket stubs — upcoming</span>${stubBlock(up)}` : ''}
+    ${past.length ? `<span class="kicker dark" style="display:block;padding-top:22px">The archive</span>${stubBlock(past)}` : ''}
     <div style="height:20px"></div>`;
+  list.querySelector('[data-newtrip]').onclick = () => openTripSheet(null);
   list.querySelectorAll('[data-cancel]').forEach(btn => btn.onclick = async () => {
     if (!confirm('Cancel this reservation? Free up to 24h before.')) return;
     await sb.from('explorite_bookings').update({ status: 'cancelled' }).eq('id', btn.dataset.cancel);
@@ -669,6 +747,703 @@ async function screenTrips() {
     screenTrips();
   });
   bindCommon();
+}
+
+/* ---------- trip create / edit sheet ---------- */
+function openTripSheet(t, opts) {
+  opts = opts || {};
+  const isEdit = !!t;
+  const d0 = new Date(); d0.setDate(d0.getDate() + 14);
+  const d1 = new Date(); d1.setDate(d1.getDate() + 17);
+  const seed = {
+    title: t ? t.title : '',
+    city: t ? t.city : (opts.city || S.city),
+    start: t ? t.start_date : isoDate(d0),
+    end: t ? t.end_date : isoDate(d1),
+    party: t ? t.party_size : 2,
+    budget: t && t.budget_cents ? (t.budget_cents / 100) : '',
+  };
+  let city = seed.city, party = seed.party;
+  const el = sheet(`
+    <div class="sheet-head"><h3>${isEdit ? 'Edit trip' : 'Start a trip'}</h3><button class="sheet-close" data-x>Close</button></div>
+    <span class="kicker">${isEdit ? 'Dates move. Plans survive.' : 'Name it, date it. The days rule themselves.'}</span>
+    <div class="form-block"><label>Trip name</label><input id="tp-title" maxlength="60" placeholder="Kyoto with the crew" value="${esc(seed.title)}" /></div>
+    <div class="form-block"><label>City desk</label>
+      <div class="slotrow">${CITIES.map(c => `<button class="slotcell ${c === seed.city ? 'sel' : ''}" data-city="${c}">${c}</button>`).join('')}</div>
+    </div>
+    <div class="form-2col">
+      <div class="form-block"><label>First day</label><input id="tp-start" type="date" value="${seed.start}" /></div>
+      <div class="form-block"><label>Last day</label><input id="tp-end" type="date" value="${seed.end}" /></div>
+    </div>
+    <div class="form-2col">
+      <div class="form-block"><label>Party</label>
+        <div class="stepper"><button data-step="-1">−</button><span class="n" id="tp-party">${seed.party}</span><button data-step="1">+</button></div>
+      </div>
+      <div class="form-block"><label>Budget (total, $)</label><input id="tp-budget" type="number" min="0" step="10" placeholder="1200" value="${seed.budget}" /></div>
+    </div>
+    <div class="form-err" id="tp-err"></div>
+    <button class="btn-primary wide" data-save>${isEdit ? 'Save changes' : 'Open the document'}</button>
+    ${isEdit ? '<button class="btn-ghost" data-del style="width:100%;text-align:center;margin-top:8px;color:var(--accent);border-color:var(--accent)">Delete this trip</button>' : ''}
+  `);
+  el.querySelector('[data-x]').onclick = () => closeSheet();
+  el.querySelectorAll('[data-city]').forEach(b => b.onclick = () => {
+    city = b.dataset.city;
+    el.querySelectorAll('[data-city]').forEach(x => x.classList.toggle('sel', x.dataset.city === city));
+  });
+  el.querySelectorAll('[data-step]').forEach(b => b.onclick = () => {
+    party = Math.min(16, Math.max(1, party + Number(b.dataset.step)));
+    el.querySelector('#tp-party').textContent = party;
+  });
+  if (isEdit) el.querySelector('[data-del]').onclick = async () => {
+    if (!confirm('Delete this trip and everything in it?')) return;
+    await sb.from('explorite_trips').delete().eq('id', t.id);
+    closeSheet(true); toast('Torn out of the journal.'); nav('/trips');
+  };
+  el.querySelector('[data-save]').onclick = async (ev) => {
+    const title = el.querySelector('#tp-title').value.trim();
+    const start = el.querySelector('#tp-start').value;
+    const end = el.querySelector('#tp-end').value;
+    const budget = Math.round(Number(el.querySelector('#tp-budget').value || 0) * 100);
+    const err = el.querySelector('#tp-err');
+    if (!title) { err.textContent = 'Give it a name. Even "Kyoto, obviously."'; return; }
+    if (!start || !end || end < start) { err.textContent = 'The last day cannot come before the first.'; return; }
+    const span = Math.round((new Date(end + 'T12:00:00') - new Date(start + 'T12:00:00')) / 86400000) + 1;
+    if (span > 14) { err.textContent = 'A fortnight max. Journals, not epics.'; return; }
+    ev.currentTarget.disabled = true;
+    const payload = { title, city, start_date: start, end_date: end, party_size: party, budget_cents: budget, cover_img: cityCover(city) };
+    if (isEdit) {
+      const { error } = await sb.from('explorite_trips').update(payload).eq('id', t.id);
+      if (error) { err.textContent = 'Could not save. Try again.'; ev.currentTarget.disabled = false; return; }
+      closeSheet(true); toast('Saved.'); screenTrip(t.id);
+    } else {
+      const { data: nt, error } = await sb.from('explorite_trips').insert({ ...payload, user_id: S.session.user.id }).select().single();
+      if (error) { err.textContent = 'Could not create the trip.'; ev.currentTarget.disabled = false; return; }
+      closeSheet(true);
+      if (opts.onCreate) { await opts.onCreate(nt); }
+      else { toast('The document is open.'); nav('/t/' + nt.id); }
+    }
+  };
+}
+
+/* ---------- trip document ---------- */
+async function screenTrip(id) {
+  if (!requireAuth('#/trips')) return;
+  window.scrollTo(0, 0);
+  $app.innerHTML = `<div class="section-pad" style="padding-top:60px"><div class="skel" style="height:180px"></div><div class="skel skel-row"></div><div class="skel skel-row"></div></div>` + tabbar('trips');
+  const bundle = await loadTripBundle(id);
+  if (!bundle) { nav('/trips'); return; }
+  const { t, items, expenses, checks, bookings } = bundle;
+  const N = tripDayCount(t);
+  const dayNotes = t.day_notes || {};
+  const normDay = (i) => (i.day_index != null && i.day_index < N ? i.day_index : null);
+  const inDay = (d) => items.filter(i => normDay(i) === d);
+  const shortlist = inDay(null);
+  const existingExp = new Set(items.map(i => i.experience_id).filter(Boolean));
+  const reload = () => screenTrip(id);
+
+  const stopRow = (it, n, ink) => {
+    const e = it.experience_id ? S.experiences.find(x => x.id === it.experience_id) : null;
+    if (it.kind === 'note') return `<div class="note-row" data-item="${it.id}"><span class="note-mark">✎</span><p>${esc(it.title)}</p></div>`;
+    return `<div class="stop-row" data-item="${it.id}">
+      <span class="stop-num" style="--di:${ink}">${n}</span>
+      ${e && e.hero_img ? `<img class="stop-thumb" src="${e.hero_img.replace('w=1600', 'w=300')}" alt=""/>` : ''}
+      <div class="stop-main">
+        <div class="stop-title">${it.start_time ? `<span class="stop-time">${esc(it.start_time)}</span>` : ''}${esc(it.title)}</div>
+        <div class="stop-meta">${[e ? durFmt(e.duration_min) : '', it.cost_cents ? money(it.cost_cents) : '', e ? 'vetted page' : (it.lat != null ? 'pinned' : '')].filter(Boolean).join(' · ')}</div>
+        ${it.note ? `<div class="stop-note">${esc(it.note)}</div>` : ''}
+      </div>
+      <div class="stop-ctl"><button data-up="${it.id}" aria-label="Move up">↑</button><button data-dn="${it.id}" aria-label="Move down">↓</button></div>
+    </div>`;
+  };
+  const fixedRow = (b, e) => `<div class="fixed-row" data-go="/x/${e.slug}">
+    <span class="fixed-stamp">✓</span>
+    <div class="stop-main">
+      <div class="stop-title"><span class="stop-time">${esc(b.slot)}</span>${esc(e.title)}</div>
+      <div class="stop-meta">Booked · ${b.party} ${b.party > 1 ? 'people' : 'person'} · ${money(b.total_cents)} · fixed point of the day</div>
+    </div>
+  </div>`;
+  const bookedOf = (d) => bookings
+    .filter(b => dayIdxOf(t, b.on_date) === d)
+    .map(b => ({ b, e: S.experiences.find(x => x.id === b.experience_id) }))
+    .filter(x => x.e);
+
+  const dayHtml = (d) => {
+    const ink = dayInk(d);
+    const fixed = bookedOf(d);
+    const stops = inDay(d);
+    const seq = [
+      ...fixed.map(f => ({ geo: geoOf(f.e), html: fixedRow(f.b, f.e) })),
+      ...stops.map((it, i) => ({ geo: it.kind === 'note' ? null : geoOf(it), html: stopRow(it, i + 1, ink) })),
+    ];
+    let rows = '', prevGeo = null;
+    seq.forEach(s => {
+      if (s.geo && prevGeo) { const w = walkLine(prevGeo, s.geo); if (w) rows += `<div class="walkline">↓ ${w}</div>`; }
+      rows += s.html;
+      if (s.geo) prevGeo = s.geo;
+    });
+    const subtotal = stops.reduce((a, i) => a + (i.cost_cents || 0), 0) + fixed.reduce((a, f) => a + (f.b.total_cents || 0), 0);
+    const geoStops = stops.filter(i => i.kind !== 'note' && geoOf(i));
+    const date = tripDayDate(t, d);
+    return `<section class="dayblock">
+      <div class="dayhead" style="--di:${ink}">
+        <span class="day-dot"></span>
+        <span class="day-n">Day ${d + 1}</span>
+        <span class="day-date">${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+        <span class="day-sub">${subtotal ? money(subtotal) : ''}</span>
+      </div>
+      <input class="day-intent" data-day="${d}" maxlength="120" placeholder="The shape of this day…" value="${esc(dayNotes[d] || '')}" />
+      ${rows || '<div class="day-empty">Nothing filed yet. Pull from the shortlist or add a stop.</div>'}
+      <div class="day-actions">
+        <button class="btn-ghost sm" data-add="${d}">+ Add a stop</button>
+        ${geoStops.length >= 3 ? `<button class="btn-ghost sm" data-opt="${d}">Optimize order</button>` : ''}
+      </div>
+    </section>`;
+  };
+
+  const plannedStops = items.reduce((a, i) => a + (i.cost_cents || 0), 0);
+  const bookedSum = bookings.reduce((a, b) => a + (b.total_cents || 0), 0);
+  const manual = expenses.reduce((a, x) => a + (x.amount_cents || 0), 0);
+  const planned = plannedStops + bookedSum + manual;
+  const over = t.budget_cents > 0 && planned > t.budget_cents;
+  const pct = t.budget_cents > 0 ? Math.min(100, Math.round((planned / t.budget_cents) * 100)) : 0;
+  const cover = t.cover_img || cityCover(t.city);
+
+  $app.innerHTML = `
+    <div class="trip-hero">
+      ${cover ? `<img src="${cover}" alt=""/>` : ''}
+      <button class="back-float" data-go="/trips">← Trips</button>
+      <button class="edit-float" data-edittrip>Edit</button>
+    </div>
+    <div class="photo-credit"><span>${esc(t.city)}</span><span>${N} ${N > 1 ? 'days' : 'day'} on paper</span></div>
+    <div class="detail-head">
+      <span class="kicker dark">The plan · ${esc(t.city)} desk</span>
+      <h1 class="display">${esc(t.title)}</h1>
+      <p class="tagline">${dfmt(t.start_date, { weekday: 'short', month: 'short', day: 'numeric' })} – ${dfmt(t.end_date, { weekday: 'short', month: 'short', day: 'numeric' })} · party of ${t.party_size}</p>
+    </div>
+    <div class="trip-toolbar">
+      <button class="btn-ghost sm" data-go="/tmap/${t.id}">The spread — map ↗</button>
+      <button class="btn-ghost sm" data-share>Share press copy</button>
+    </div>
+
+    <div class="detail-section" style="padding-top:18px">
+      <span class="kicker dark">The shortlist — not yet scheduled</span>
+      <div class="sl-wrap">${shortlist.map((it, i) => stopRow(it, i + 1, dayInk(null))).join('') ||
+        '<div class="day-empty" style="border:0;padding-left:0">Dog-ear pages from the journal or add your own finds. They wait here until they earn a day.</div>'}</div>
+      <button class="btn-ghost sm" data-add="sl" style="margin-top:8px">+ Add an idea</button>
+    </div>
+
+    <div class="detail-section">
+      <span class="kicker dark">The itinerary</span>
+      ${Array.from({ length: N }, (_, d) => dayHtml(d)).join('')}
+    </div>
+
+    <div class="detail-section">
+      <span class="kicker dark">The ledger</span>
+      <div class="ledger-top">
+        <div><div class="ledger-big">${money(planned)}</div><div class="kicker">planned so far</div></div>
+        <button data-editbudget style="text-align:right"><div class="ledger-big ${over ? 'over' : ''}">${t.budget_cents ? money(t.budget_cents) : '—'}</div><div class="kicker">budget · tap to set</div></button>
+      </div>
+      ${t.budget_cents ? `<div class="ledger-bar"><div class="ledger-fill ${over ? 'over' : ''}" style="width:${pct}%"></div></div>` : ''}
+      <div class="ledger-split kicker dark">${money(Math.round(planned / (t.party_size || 1)))} each · party of ${t.party_size}${over ? ' · over budget' : ''}</div>
+      ${expenses.map(x => `<div class="exp-row"><span class="exp-cat">${esc(x.category)}</span><span class="exp-title">${esc(x.title)}</span><span class="exp-amt">${money(x.amount_cents)}</span><button class="exp-del" data-delexp="${x.id}">✕</button></div>`).join('')}
+      <button class="btn-ghost sm" data-addexp style="margin-top:10px">+ Add an expense</button>
+    </div>
+
+    <div class="detail-section">
+      <span class="kicker dark">Kit list</span>
+      <div>${checks.map(c => `<div class="kit-row ${c.done ? 'done' : ''}"><input type="checkbox" data-check="${c.id}" ${c.done ? 'checked' : ''}/><span>${esc(c.label)}</span><button class="exp-del" data-delcheck="${c.id}">✕</button></div>`).join('')}</div>
+      <div class="kit-add"><input id="kit-input" maxlength="80" placeholder="Add to the kit…"/><button class="btn-ghost sm" data-addkit>Add</button></div>
+      ${checks.length ? '' : '<button class="btn-ghost sm" data-seedkit style="margin-top:8px">Start with the field kit</button>'}
+    </div>
+    <div style="height:30px"></div>
+  ` + tabbar('trips');
+
+  bindCommon();
+  $app.querySelector('[data-edittrip]').onclick = () => openTripSheet(t);
+  $app.querySelector('[data-editbudget]').onclick = () => openTripSheet(t);
+  $app.querySelector('[data-share]').onclick = async () => {
+    const link = shareTripLink(t);
+    try { await navigator.clipboard.writeText(link); toast('Press copy link on the clipboard. Send it.'); }
+    catch { prompt('Copy the link:', link); }
+  };
+  $app.querySelectorAll('.day-intent').forEach(inp => inp.onchange = async () => {
+    const notes = Object.assign({}, t.day_notes || {});
+    notes[inp.dataset.day] = inp.value.trim();
+    await sb.from('explorite_trips').update({ day_notes: notes }).eq('id', t.id);
+    t.day_notes = notes;
+  });
+  $app.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
+    const d = b.dataset.add === 'sl' ? null : Number(b.dataset.add);
+    openStopSheet(t, d, existingExp, reload);
+  });
+  $app.querySelectorAll('[data-opt]').forEach(b => b.onclick = async () => {
+    const d = Number(b.dataset.opt);
+    b.disabled = true;
+    const anchor = bookedOf(d).map(f => geoOf(f.e)).find(Boolean) || null;
+    await optimizeDay(inDay(d), anchor);
+    toast('Reordered for the shortest walk.');
+    reload();
+  });
+  $app.querySelectorAll('[data-item]').forEach(row => row.onclick = (ev) => {
+    if (ev.target.closest('.stop-ctl')) return;
+    const it = items.find(x => x.id === row.dataset.item);
+    if (it) openItemSheet(t, it, N, reload);
+  });
+  const bump = async (id2, dir) => {
+    const it = items.find(x => x.id === id2);
+    if (!it) return;
+    const bucket = inDay(normDay(it));
+    const idx = bucket.findIndex(x => x.id === id2);
+    const to = idx + dir;
+    if (to < 0 || to >= bucket.length) return;
+    const arr = bucket.slice();
+    const [m] = arr.splice(idx, 1);
+    arr.splice(to, 0, m);
+    await Promise.all(arr.map((x, i) => sb.from('explorite_trip_items').update({ position: i }).eq('id', x.id)));
+    reload();
+  };
+  $app.querySelectorAll('[data-up]').forEach(b => b.onclick = (ev) => { ev.stopPropagation(); bump(b.dataset.up, -1); });
+  $app.querySelectorAll('[data-dn]').forEach(b => b.onclick = (ev) => { ev.stopPropagation(); bump(b.dataset.dn, 1); });
+  $app.querySelector('[data-addexp]').onclick = () => openExpenseSheet(t, reload);
+  $app.querySelectorAll('[data-delexp]').forEach(b => b.onclick = async () => {
+    await sb.from('explorite_trip_expenses').delete().eq('id', b.dataset.delexp); reload();
+  });
+  $app.querySelectorAll('[data-check]').forEach(c => c.onchange = async () => {
+    await sb.from('explorite_trip_checklist').update({ done: c.checked }).eq('id', c.dataset.check);
+    c.closest('.kit-row').classList.toggle('done', c.checked);
+  });
+  $app.querySelectorAll('[data-delcheck]').forEach(b => b.onclick = async () => {
+    await sb.from('explorite_trip_checklist').delete().eq('id', b.dataset.delcheck); reload();
+  });
+  $app.querySelector('[data-addkit]').onclick = async () => {
+    const v = $app.querySelector('#kit-input').value.trim();
+    if (!v) return;
+    await sb.from('explorite_trip_checklist').insert({ trip_id: t.id, label: v, position: Math.floor(Date.now() / 1000) });
+    reload();
+  };
+  const seedBtn = $app.querySelector('[data-seedkit]');
+  if (seedBtn) seedBtn.onclick = async () => {
+    await sb.from('explorite_trip_checklist').insert(KIT_SEED.map((label, i) => ({ trip_id: t.id, label, position: i })));
+    toast('The field kit is in.');
+    reload();
+  };
+}
+
+async function optimizeDay(stops, anchor) {
+  const real = stops.filter(s => s.kind !== 'note');
+  const notes = stops.filter(s => s.kind === 'note');
+  const geo = real.filter(s => geoOf(s));
+  const rest = real.filter(s => !geoOf(s));
+  if (geo.length < 2) return;
+  let cur = anchor || geoOf(geo[0]);
+  const pool = geo.slice(); const ordered = [];
+  while (pool.length) {
+    let bi = 0, bd = Infinity;
+    pool.forEach((p, i) => { const d = havKm(cur, geoOf(p)); if (d < bd) { bd = d; bi = i; } });
+    const pick = pool.splice(bi, 1)[0];
+    ordered.push(pick); cur = geoOf(pick);
+  }
+  const final = [...ordered, ...rest, ...notes];
+  await Promise.all(final.map((x, i) => sb.from('explorite_trip_items').update({ position: i }).eq('id', x.id)));
+}
+
+/* ---------- add stop sheet ---------- */
+function openStopSheet(t, dayIndex, existingExp, onDone) {
+  let mode = 'journal';
+  let pickedGeo = null;
+  const el = sheet(`
+    <div class="sheet-head"><h3>Add to ${dayIndex == null ? 'the shortlist' : 'Day ' + (dayIndex + 1)}</h3><button class="sheet-close" data-x>Close</button></div>
+    <div class="seg">
+      <button class="seg-btn active" data-mode="journal">The journal</button>
+      <button class="seg-btn" data-mode="place">Your own stop</button>
+      <button class="seg-btn" data-mode="note">A note</button>
+    </div>
+    <div id="stop-body" style="max-height:52dvh;overflow-y:auto"></div>
+  `);
+  el.querySelector('[data-x]').onclick = () => closeSheet();
+  const body = el.querySelector('#stop-body');
+
+  const insertItem = async (payload) => {
+    const { error } = await sb.from('explorite_trip_items').insert({
+      trip_id: t.id, day_index: dayIndex, position: Math.floor(Date.now() / 1000), ...payload,
+    });
+    if (error) { toast('Could not file it. Try again.'); return false; }
+    return true;
+  };
+
+  const paint = () => {
+    el.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    if (mode === 'journal') {
+      const pool = S.experiences.filter(e => e.city === t.city)
+        .sort((a, b2) => (S.saves.has(b2.id) ? 1 : 0) - (S.saves.has(a.id) ? 1 : 0));
+      body.innerHTML = `<span class="kicker">Vetted pages from the ${esc(t.city)} desk. Dog-eared first.</span>` +
+        pool.map(e => `<button class="pick-row" data-exp="${e.id}">
+          <img src="${e.hero_img.replace('w=1600', 'w=300')}" alt=""/>
+          <div><h5>${esc(e.title)}${S.saves.has(e.id) ? ' <span style="color:var(--accent)">♥</span>' : ''}</h5>
+          <div class="kicker">${money(e.price_cents)} · ${durFmt(e.duration_min)}${existingExp.has(e.id) ? ' · already filed' : ''}</div></div>
+        </button>`).join('');
+      body.querySelectorAll('[data-exp]').forEach(b => b.onclick = async () => {
+        const e = S.experiences.find(x => x.id === b.dataset.exp);
+        b.disabled = true;
+        const ok = await insertItem({ kind: 'experience', experience_id: e.id, title: e.title, lat: e.lat, lng: e.lng, cost_cents: e.price_cents });
+        if (ok) { closeSheet(true); toast('Filed. It is on the map already.'); onDone(); }
+      });
+    } else if (mode === 'place') {
+      body.innerHTML = `
+        <div class="form-block"><label>What is it</label><input id="st-title" maxlength="80" placeholder="Kissa coffee counter" /></div>
+        <div class="form-block"><label>Find it on the map (optional)</label>
+          <div class="kit-add" style="margin-top:2px"><input id="geo-q" placeholder="Search near ${esc(t.city)}…"/><button class="btn-ghost sm" data-geosearch>Find</button></div>
+          <div id="geo-results"></div><div id="geo-picked" class="geo-picked"></div>
+        </div>
+        <div class="form-2col">
+          <div class="form-block"><label>Cost ($, optional)</label><input id="st-cost" type="number" min="0" step="1" placeholder="0" /></div>
+          <div class="form-block"><label>Time (optional)</label><input id="st-time" type="time" /></div>
+        </div>
+        <div class="form-block"><label>Note (optional)</label><input id="st-note" maxlength="140" placeholder="Cash only. Order the pudding." /></div>
+        <button class="btn-primary wide" data-addplace>Add the stop</button>`;
+      body.querySelector('[data-geosearch]').onclick = async (ev) => {
+        const q = body.querySelector('#geo-q').value.trim();
+        if (!q) return;
+        const findBtn = ev.currentTarget;
+        findBtn.disabled = true;
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=en&q=${encodeURIComponent(q + ', ' + t.city)}`);
+          const found = await res.json();
+          body.querySelector('#geo-results').innerHTML = (found || []).map((r, i) =>
+            `<button class="geo-result" data-geo="${i}">${esc(r.display_name.split(',').slice(0, 3).join(','))}</button>`).join('') || '<div class="kicker" style="padding:8px 0">Nothing found. It can live without a pin.</div>';
+          body.querySelectorAll('[data-geo]').forEach(bx => bx.onclick = () => {
+            const r = found[Number(bx.dataset.geo)];
+            pickedGeo = { lat: Number(r.lat), lng: Number(r.lon), name: r.display_name.split(',')[0] };
+            body.querySelector('#geo-picked').textContent = '📍 pinned: ' + pickedGeo.name;
+            body.querySelector('#geo-results').innerHTML = '';
+          });
+        } catch { toast('Map search is napping. Add it without a pin.'); }
+        findBtn.disabled = false;
+      };
+      body.querySelector('[data-addplace]').onclick = async (ev) => {
+        const title = body.querySelector('#st-title').value.trim();
+        if (!title) { toast('Name the stop first.'); return; }
+        ev.currentTarget.disabled = true;
+        const ok = await insertItem({
+          kind: 'place', title,
+          note: body.querySelector('#st-note').value.trim() || null,
+          cost_cents: Math.round(Number(body.querySelector('#st-cost').value || 0) * 100),
+          start_time: body.querySelector('#st-time').value || null,
+          lat: pickedGeo ? pickedGeo.lat : null, lng: pickedGeo ? pickedGeo.lng : null,
+        });
+        if (ok) { closeSheet(true); toast(pickedGeo ? 'Added and pinned.' : 'Added.'); onDone(); }
+      };
+    } else {
+      body.innerHTML = `
+        <div class="form-block"><label>The note</label><textarea id="st-notebody" rows="3" maxlength="240" placeholder="Late checkout is noon. Taxis scarce after the fireworks."></textarea></div>
+        <button class="btn-primary wide" data-addnote>Pin the note</button>`;
+      body.querySelector('[data-addnote]').onclick = async (ev) => {
+        const v = body.querySelector('#st-notebody').value.trim();
+        if (!v) return;
+        ev.currentTarget.disabled = true;
+        const ok = await insertItem({ kind: 'note', title: v });
+        if (ok) { closeSheet(true); toast('Noted.'); onDone(); }
+      };
+    }
+  };
+  el.querySelectorAll('.seg-btn').forEach(b => b.onclick = () => { mode = b.dataset.mode; paint(); });
+  paint();
+}
+
+/* ---------- item edit sheet ---------- */
+function openItemSheet(t, it, N, onDone) {
+  const e = it.experience_id ? S.experiences.find(x => x.id === it.experience_id) : null;
+  const isNote = it.kind === 'note';
+  const el = sheet(`
+    <div class="sheet-head"><h3>${isNote ? 'The note' : 'The stop'}</h3><button class="sheet-close" data-x>Close</button></div>
+    <span class="kicker">${esc(it.title.length > 60 ? it.title.slice(0, 60) + '…' : it.title)}</span>
+    ${isNote ? `<div class="form-block"><label>Note</label><textarea id="it-title" rows="3" maxlength="240">${esc(it.title)}</textarea></div>` : `
+    <div class="form-2col">
+      <div class="form-block"><label>Time</label><input id="it-time" type="time" value="${esc(it.start_time || '')}" /></div>
+      <div class="form-block"><label>Cost ($)</label><input id="it-cost" type="number" min="0" step="1" value="${it.cost_cents ? it.cost_cents / 100 : ''}" /></div>
+    </div>
+    <div class="form-block"><label>Note</label><input id="it-note" maxlength="140" value="${esc(it.note || '')}" placeholder="Bring cash. Ask for Paola." /></div>`}
+    <div class="form-block"><label>Where it lives</label>
+      <select id="it-day">
+        <option value="" ${it.day_index == null ? 'selected' : ''}>The shortlist</option>
+        ${Array.from({ length: N }, (_, d) => `<option value="${d}" ${it.day_index === d ? 'selected' : ''}>Day ${d + 1} — ${tripDayDate(t, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</option>`).join('')}
+      </select>
+    </div>
+    <button class="btn-primary wide" data-saveit>Save</button>
+    <div style="display:flex;gap:8px;justify-content:center">
+      ${e ? `<button class="btn-ghost" data-viewpage>View the page</button><button class="btn-ghost" data-crew>Rally the crew</button>` : ''}
+      <button class="btn-ghost" data-rm style="color:var(--accent);border-color:var(--accent)">Remove</button>
+    </div>
+  `);
+  el.querySelector('[data-x]').onclick = () => closeSheet();
+  if (e) {
+    el.querySelector('[data-viewpage]').onclick = () => { closeSheet(true); nav('/x/' + e.slug); };
+    el.querySelector('[data-crew]').onclick = () => { closeSheet(true); openPlanSheet(e); };
+  }
+  el.querySelector('[data-rm]').onclick = async () => {
+    await sb.from('explorite_trip_items').delete().eq('id', it.id);
+    closeSheet(true); toast('Struck from the plan.'); onDone();
+  };
+  el.querySelector('[data-saveit]').onclick = async (ev) => {
+    ev.currentTarget.disabled = true;
+    const dv = el.querySelector('#it-day').value;
+    const patch = { day_index: dv === '' ? null : Number(dv) };
+    if (isNote) {
+      const v = el.querySelector('#it-title').value.trim();
+      if (v) patch.title = v;
+    } else {
+      patch.start_time = el.querySelector('#it-time').value || null;
+      patch.cost_cents = Math.round(Number(el.querySelector('#it-cost').value || 0) * 100);
+      patch.note = el.querySelector('#it-note').value.trim() || null;
+    }
+    if (patch.day_index !== it.day_index) patch.position = Math.floor(Date.now() / 1000);
+    await sb.from('explorite_trip_items').update(patch).eq('id', it.id);
+    closeSheet(true); onDone();
+  };
+}
+
+/* ---------- expense sheet ---------- */
+function openExpenseSheet(t, onDone) {
+  let cat = 'Food';
+  const el = sheet(`
+    <div class="sheet-head"><h3>Ledger entry</h3><button class="sheet-close" data-x>Close</button></div>
+    <span class="kicker">Stops and bookings count themselves. This is for the rest — flights, lodging, gear.</span>
+    <div class="form-block"><label>What</label><input id="ex-title" maxlength="60" placeholder="Flights, both of us" /></div>
+    <div class="form-block"><label>Category</label>
+      <div class="slotrow">${EXP_CATS.map(c => `<button class="slotcell ${c === cat ? 'sel' : ''}" data-cat="${c}">${c}</button>`).join('')}</div>
+    </div>
+    <div class="form-block"><label>Amount ($)</label><input id="ex-amt" type="number" min="0" step="1" placeholder="480" /></div>
+    <div class="form-err" id="ex-err"></div>
+    <button class="btn-primary wide" data-saveex>Enter it</button>
+  `);
+  el.querySelector('[data-x]').onclick = () => closeSheet();
+  el.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
+    cat = b.dataset.cat;
+    el.querySelectorAll('[data-cat]').forEach(x => x.classList.toggle('sel', x.dataset.cat === cat));
+  });
+  el.querySelector('[data-saveex]').onclick = async (ev) => {
+    const title = el.querySelector('#ex-title').value.trim();
+    const amt = Math.round(Number(el.querySelector('#ex-amt').value || 0) * 100);
+    if (!title || !amt) { el.querySelector('#ex-err').textContent = 'A name and a number. The ledger is strict.'; return; }
+    ev.currentTarget.disabled = true;
+    await sb.from('explorite_trip_expenses').insert({ trip_id: t.id, title, category: cat, amount_cents: amt });
+    closeSheet(true); onDone();
+  };
+}
+
+/* ---------- add-to-trip from an experience page ---------- */
+async function openAddToTripSheet(e) {
+  const { data: trips } = await sb.from('explorite_trips').select('*').order('start_date', { ascending: true });
+  if (!trips || !trips.length) {
+    openTripSheet(null, {
+      city: e.city,
+      onCreate: async (nt) => {
+        await addExpToTrip(nt, null, e);
+        toast('Trip started — the page is on its shortlist.');
+        nav('/t/' + nt.id);
+      },
+    });
+    return;
+  }
+  let selTrip = trips.find(x => x.city === e.city) || trips[0];
+  let selDay = null;
+  const el = sheet(`
+    <div class="sheet-head"><h3>File it into a trip</h3><button class="sheet-close" data-x>Close</button></div>
+    <span class="kicker">${esc(e.title)} — ${esc(e.city)}</span>
+    <label class="kicker dark lbl-gap">Which trip</label>
+    <div id="att-trips">${trips.map(x => `
+      <button class="vote-slot" data-trip="${x.id}" style="width:100%">
+        <span><span class="when">${esc(x.title)}</span></span>
+        <span class="kicker">${esc(x.city)}${x.city !== e.city ? ' · other city' : ''}</span>
+      </button>`).join('')}</div>
+    <label class="kicker dark lbl-gap">Which day</label>
+    <div class="slotrow" id="att-days"></div>
+    <div class="form-err" id="att-err"></div>
+    <button class="btn-primary wide" data-file style="margin-top:10px">File it</button>
+  `);
+  el.querySelector('[data-x]').onclick = () => closeSheet();
+  const paintTrips = () => el.querySelectorAll('[data-trip]').forEach(b => {
+    b.style.borderColor = b.dataset.trip === selTrip.id ? 'var(--ink)' : '';
+    b.style.borderWidth = b.dataset.trip === selTrip.id ? '1.5px' : '';
+  });
+  const paintDays = () => {
+    const N = tripDayCount(selTrip);
+    el.querySelector('#att-days').innerHTML = `<button class="slotcell ${selDay == null ? 'sel' : ''}" data-day="">Shortlist</button>` +
+      Array.from({ length: N }, (_, d) => `<button class="slotcell ${selDay === d ? 'sel' : ''}" data-day="${d}">D${d + 1}</button>`).join('');
+    el.querySelectorAll('[data-day]').forEach(b => b.onclick = () => {
+      selDay = b.dataset.day === '' ? null : Number(b.dataset.day);
+      paintDays();
+    });
+  };
+  el.querySelectorAll('[data-trip]').forEach(b => b.onclick = () => {
+    selTrip = trips.find(x => x.id === b.dataset.trip);
+    selDay = null;
+    paintTrips(); paintDays();
+  });
+  paintTrips(); paintDays();
+  el.querySelector('[data-file]').onclick = async (ev) => {
+    ev.currentTarget.disabled = true;
+    await addExpToTrip(selTrip, selDay, e);
+    closeSheet(true);
+    toast(`Filed into ${selTrip.title}.`);
+  };
+}
+async function addExpToTrip(t, dayIndex, e) {
+  await sb.from('explorite_trip_items').insert({
+    trip_id: t.id, day_index: dayIndex, kind: 'experience', experience_id: e.id,
+    title: e.title, lat: e.lat, lng: e.lng, cost_cents: e.price_cents,
+    position: Math.floor(Date.now() / 1000),
+  });
+}
+
+/* ---------- the spread (map view) ---------- */
+function drawTripMap(elId, pts, fallbackCity, filter) {
+  const map = L.map(elId, { zoomControl: false, attributionControl: true });
+  L.tileLayer('https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap © CARTO', maxZoom: 19,
+  }).addTo(map);
+  let layer = null;
+  const draw = (f) => {
+    if (layer) layer.remove();
+    layer = L.layerGroup().addTo(map);
+    const sel = pts.filter(p => f === 'all' || (f === 'sl' ? p.day == null : p.day === Number(f)));
+    const byDay = {};
+    sel.forEach(p => { const k = p.day == null ? 'sl' : String(p.day); (byDay[k] = byDay[k] || []).push(p); });
+    Object.keys(byDay).forEach(k => {
+      const arr = byDay[k];
+      const ink = k === 'sl' ? '#8C8471' : dayInk(Number(k));
+      arr.forEach((p, idx) => {
+        L.marker([p.lat, p.lng], {
+          icon: L.divIcon({ className: 'pin-wrap', html: `<div class="pin" style="--di:${ink}">${idx + 1}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }),
+        }).addTo(layer).bindPopup(`<b>${esc(p.title)}</b><br>${k === 'sl' ? 'Shortlist' : 'Day ' + (Number(k) + 1)}${p.fixed ? ' · booked' : ''}`);
+      });
+      if (k !== 'sl' && arr.length > 1) {
+        L.polyline(arr.map(p => [p.lat, p.lng]), { color: ink, weight: 2, dashArray: '5 6', opacity: 0.85 }).addTo(layer);
+      }
+    });
+    if (sel.length) map.fitBounds(L.latLngBounds(sel.map(p => [p.lat, p.lng])).pad(0.25));
+    else map.setView(CITY_FALLBACK[fallbackCity] || CITY_FALLBACK['Florence'], 12);
+  };
+  draw(filter || 'all');
+  return draw;
+}
+
+async function screenTripMap(id) {
+  if (!requireAuth('#/trips')) return;
+  window.scrollTo(0, 0);
+  const bundle = await loadTripBundle(id);
+  if (!bundle) { nav('/trips'); return; }
+  if (!window.L) { toast('The map is still loading — try again in a second.'); nav('/t/' + id); return; }
+  const { t, items, bookings } = bundle;
+  const N = tripDayCount(t);
+  $app.innerHTML = `
+    <div class="map-head">
+      <button class="btn-ghost sm" data-go="/t/${t.id}">← ${esc(t.title.length > 22 ? t.title.slice(0, 22) + '…' : t.title)}</button>
+      <span class="kicker">The spread</span>
+    </div>
+    <div class="map-chips" id="map-chips">
+      <button class="map-chip active" data-day="all">All</button>
+      <button class="map-chip" data-day="sl">Shortlist</button>
+      ${Array.from({ length: N }, (_, d) => `<button class="map-chip" data-day="${d}" style="--di:${dayInk(d)}">D${d + 1}</button>`).join('')}
+    </div>
+    <div id="tripmap"></div>`;
+  bindCommon();
+  const pts = [];
+  bookings.forEach(b => {
+    const e = S.experiences.find(x => x.id === b.experience_id);
+    if (e && e.lat != null) pts.push({ day: dayIdxOf(t, b.on_date), lat: e.lat, lng: e.lng, title: e.title, fixed: true });
+  });
+  items.forEach(i => {
+    if (i.kind !== 'note' && i.lat != null) pts.push({ day: (i.day_index != null && i.day_index < N) ? i.day_index : null, lat: i.lat, lng: i.lng, title: i.title });
+  });
+  const draw = drawTripMap('tripmap', pts, t.city, 'all');
+  $app.querySelectorAll('.map-chip').forEach(c => c.onclick = () => {
+    $app.querySelectorAll('.map-chip').forEach(x => x.classList.toggle('active', x === c));
+    draw(c.dataset.day);
+  });
+}
+
+/* ---------- press copy (shared read-only view, no account) ---------- */
+async function screenTripShare(token) {
+  window.scrollTo(0, 0);
+  $app.innerHTML = `<div class="section-pad" style="padding-top:60px"><div class="skel" style="height:180px"></div><div class="skel skel-row"></div></div>`;
+  const { data } = await sb.rpc('explorite_get_trip', { p_token: token });
+  if (!data || !data.trip) {
+    $app.innerHTML = `<div class="empty" style="margin-top:100px"><h4>This press copy expired</h4>
+      <p>The plan was closed or the link is wrong. Ask your friend for a fresh one.</p>
+      <button class="btn-primary" data-go="/">Open the journal</button></div>`;
+    bindCommon();
+    return;
+  }
+  const t = data.trip;
+  const items = data.items || [];
+  const N = tripDayCount(t);
+  const dayNotes = t.day_notes || {};
+  const inDay = (d) => items.filter(i => ((i.day_index != null && i.day_index < N) ? i.day_index : null) === d);
+  const row = (it, n, ink) => {
+    if (it.kind === 'note') return `<div class="note-row"><span class="note-mark">✎</span><p>${esc(it.title)}</p></div>`;
+    return `<div class="stop-row" style="cursor:default">
+      <span class="stop-num" style="--di:${ink}">${n}</span>
+      ${it.hero_img ? `<img class="stop-thumb" src="${it.hero_img.replace('w=1600', 'w=300')}" alt=""/>` : ''}
+      <div class="stop-main">
+        <div class="stop-title">${it.start_time ? `<span class="stop-time">${esc(it.start_time)}</span>` : ''}${esc(it.title)}</div>
+        <div class="stop-meta">${[it.duration_min ? durFmt(it.duration_min) : '', it.cost_cents ? money(it.cost_cents) : '', it.meeting_point ? 'meet: ' + it.meeting_point : ''].filter(Boolean).join(' · ')}</div>
+        ${it.note ? `<div class="stop-note">${esc(it.note)}</div>` : ''}
+      </div>
+    </div>`;
+  };
+  const dayHtml = (d) => {
+    const ink = dayInk(d);
+    const stops = inDay(d);
+    let rows = '', prevGeo = null;
+    stops.forEach((it, i) => {
+      const g = it.kind !== 'note' ? geoOf(it) : null;
+      if (g && prevGeo) { const w = walkLine(prevGeo, g); if (w) rows += `<div class="walkline">↓ ${w}</div>`; }
+      rows += row(it, i + 1, ink);
+      if (g) prevGeo = g;
+    });
+    const date = tripDayDate(t, d);
+    return `<section class="dayblock">
+      <div class="dayhead" style="--di:${ink}">
+        <span class="day-dot"></span><span class="day-n">Day ${d + 1}</span>
+        <span class="day-date">${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+      </div>
+      ${dayNotes[d] ? `<div class="day-intent" style="border:0">${esc(dayNotes[d])}</div>` : ''}
+      ${rows || '<div class="day-empty">A free day. The best kind.</div>'}
+    </section>`;
+  };
+  const shortlist = inDay(null);
+  const geoPts = items.filter(i => i.kind !== 'note' && i.lat != null);
+  $app.innerHTML = `
+    <div class="trip-hero" style="height:170px">
+      ${t.cover_img ? `<img src="${t.cover_img}" alt=""/>` : ''}
+    </div>
+    <div class="photo-credit"><span>${esc(t.city)}</span><span>Press copy — read only</span></div>
+    <div class="detail-head">
+      <span class="kicker dark">A field plan, shared with you</span>
+      <h1 class="display">${esc(t.title)}</h1>
+      <p class="tagline">${dfmt(t.start_date, { weekday: 'short', month: 'short', day: 'numeric' })} – ${dfmt(t.end_date, { weekday: 'short', month: 'short', day: 'numeric' })} · party of ${t.party_size}</p>
+    </div>
+    ${(geoPts.length && window.L) ? '<div id="sharemap"></div>' : ''}
+    ${shortlist.length ? `<div class="detail-section" style="padding-top:16px">
+      <span class="kicker dark">The shortlist</span>
+      ${shortlist.map((it, i) => row(it, i + 1, dayInk(null))).join('')}
+    </div>` : ''}
+    <div class="detail-section">
+      <span class="kicker dark">The itinerary</span>
+      ${Array.from({ length: N }, (_, d) => dayHtml(d)).join('')}
+    </div>
+    <div class="empty" style="margin-top:30px">
+      <h4>Made in the field journal</h4>
+      <p>Every stop with a number was vetted by a person who went. Plans, crew votes and pages live in Explorite.</p>
+      <button class="btn-primary" data-go="/">Open Explorite</button>
+    </div>
+    <div style="height:40px"></div>`;
+  bindCommon();
+  if (geoPts.length && window.L) {
+    const pts = geoPts.map(i => ({ day: (i.day_index != null && i.day_index < N) ? i.day_index : null, lat: i.lat, lng: i.lng, title: i.title }));
+    drawTripMap('sharemap', pts, t.city, 'all');
+  }
 }
 
 /* ---------- saved ---------- */
@@ -918,6 +1693,9 @@ function render() {
     case 'plans': screenPlans(); break;
     case 'p': screenVote(r.arg); break;
     case 'trips': screenTrips(); break;
+    case 't': screenTrip(r.arg); break;
+    case 'tmap': screenTripMap(r.arg); break;
+    case 'j': screenTripShare(r.arg); break;
     case 'inbox': screenInbox(); break;
     case 'chat': screenChat(r.arg); break;
     case 'auth': screenAuth(); break;
@@ -929,7 +1707,7 @@ function render() {
 /* ---------------- boot ---------------- */
 (async function boot() {
   // splash (skip on vote links — friends should land instantly)
-  if (!location.hash.startsWith('#/p/')) {
+  if (!location.hash.startsWith('#/p/') && !location.hash.startsWith('#/j/')) {
     const sp = document.createElement('div');
     sp.className = 'splash';
     sp.innerHTML = `<div class="word"><span>Explo<em>rite</em></span></div><div class="sub">The field journal</div>`;

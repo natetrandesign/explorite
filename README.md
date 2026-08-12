@@ -1,6 +1,7 @@
-# Explorite v2 — "Field Journal"
+# Explorite v3 — "Field Journal / The Planner"
 
-A travel discovery app that started as a UX research case study and became a working product.
+A travel discovery app that started as a UX research case study, became a working product,
+and now plans the whole trip — one trip, one document.
 
 **Live:** https://explorite.vercel.app
 
@@ -14,6 +15,22 @@ problems the original research surfaced:
 2. **Coordination** — the user journey map showed only one negative dip: checking friends'
    availability. Discovery was never the hard part. Getting the crew to show up was.
 
+## v3: the trip planner (Wanderlog-informed UX)
+
+A competitive teardown of Wanderlog surfaced seven UX principles worth stealing, and v3
+translates each into the Field Journal language:
+
+1. **One trip, one document** — a trip is a single scrolling page: shortlist, day blocks, ledger, kit list.
+2. **The map is a mirror** — every stop with coordinates appears instantly on "the spread" (Leaflet/OSM), numbered pins inked per day, dashed route lines.
+3. **The day is the unit of thought** — per-day blocks with an editable intent line, per-day subtotals.
+4. **Ideas before commitments** — "the shortlist" holds unscheduled finds until they earn a day.
+5. **The plan does arithmetic** — walking time between stops (haversine), day subtotals, one-tap nearest-neighbor "Optimize order".
+6. **Collaboration is one link** — a share token renders a read-only "press copy" with map, no account needed (same pattern as crew-plan voting).
+7. **Money and logistics live inside the plan** — "the ledger" (budget bar, expenses, per-person split, bookings auto-counted) and a packing "kit list". Confirmed bookings auto-file into their day as fixed points.
+
+Stops come from three sources: vetted journal pages, your own stops (geocoded via Nominatim),
+or plain notes. Booked reservations are facts; planned stops are drafts.
+
 ## Real functionality (Supabase)
 
 - **Auth** — email/password accounts; browsing never requires one (research: don't gate the feed)
@@ -23,7 +40,8 @@ problems the original research surfaced:
 - **Crew plans** — the signature feature: propose 2-4 time windows, share one link, friends vote
   In / Maybe / Out **without needing an account** (SECURITY DEFINER RPCs behind a share token)
 - **Host messaging** — persisted threads with realtime host replies (Postgres trigger + Supabase Realtime)
-- **RLS everywhere** — owner-only rows for saves, bookings, plans, threads; public read for the catalog
+- **RLS everywhere** — owner-only rows for saves, bookings, plans, threads, trips; public read for the catalog
+- **Trips** — trips, day items, expenses and checklists in four owner-only tables; the share view goes through one SECURITY DEFINER RPC gated by a share token
 
 ## Design: v1 → v2
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Explorite — The field journal for travelers who hate tourist traps</title>
+  <title>Explorite — The field journal that plans the trip too</title>
   <meta name="description" content="Explorite is a vetted field journal of local experiences. Every listing walked, eaten, or rowed by a real person before it earns a page. Book it, then get your crew to actually show up." />
   <meta name="theme-color" content="#F6F3EC" />
   <link rel="manifest" href="manifest.webmanifest" />
@@ -17,12 +17,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://images.unsplash.com" />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Karla:ital,wght@0,400..700;1,400..700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div id="app" aria-live="polite"></div>
   <div id="sheet-root"></div>
   <div id="toast-root" aria-live="assertive"></div>
+  <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script defer src="app.js"></script>
 </body>
