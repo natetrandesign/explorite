@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 224 514" width="224" height="514" role="img" aria-labelledby="splash-title">
+  <title id="splash-title">Explorite splash field</title>
+  <rect width="224" height="514" fill="#1e1e1e"/>
+  <rect y="272" width="224" height="242" fill="url(#splash-gradient)"/>
+  <defs>
+    <linearGradient id="splash-gradient" x1="0" y1="272" x2="0" y2="514" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2f2f26"/>
+      <stop offset="0.133" stop-color="#484834"/>
+      <stop offset="0.267" stop-color="#616140"/>
+      <stop offset="0.4" stop-color="#79794c"/>
+      <stop offset="0.533" stop-color="#929259"/>
+      <stop offset="0.667" stop-color="#abab67"/>
+      <stop offset="0.8" stop-color="#c3c373"/>
+      <stop offset="0.933" stop-color="#dbdb7f"/>
+      <stop offset="1" stop-color="#e8e886"/>
+    </linearGradient>
+  </defs>
+</svg>
