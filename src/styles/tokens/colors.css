@@ -1,0 +1,72 @@
+/* Explorite hi-fi color.
+   Paints sampled from Nathan's frame export.
+   Figma comment-pin teal is not part of this palette. */
+
+:root {
+  /* Light discovery surface */
+  --paper: #f7f0e0;
+  --paper-raise: #ffffff;
+  --paper-muted: #f8f8f8;
+  --surface-discovery: var(--paper);
+  --surface-discovery-raised: var(--paper-raise);
+  --surface-discovery-muted: var(--paper-muted);
+
+  /* Dark surfaces: splash, auth, planner */
+  --surface-dark: #1e1e1e;
+  --surface-dark-raised: #303027;
+  --surface-input: #373737;
+
+  /* Cooler light sheet on coordination */
+  --surface-neutral: #ececec;
+  --surface-neutral-muted: #e2e4e6;
+
+  /* Text on discovery and other light surfaces */
+  --ink: #1e1e1e;
+  --ink-soft: #525252;
+  --ink-faint: #5f5f5f;
+
+  /* Text on dark surfaces */
+  --ink-on-dark: #ffffff;
+  --ink-on-dark-soft: #a5a5a5;
+
+  /* Rules */
+  --hairline: #d9d9d9;
+  --hairline-dark: #1e1e1e;
+  --hairline-on-dark: #373737;
+
+  /* Yellow action */
+  --accent: #eaea88;
+  --accent-ink: #1e1e1e;
+  --accent-hover: color-mix(in srgb, #eaea88 86%, #ffffff);
+  --accent-pressed: #d1d17b;
+
+  /* Book link */
+  --link: #3975ea;
+  --link-pressed: color-mix(in srgb, #3975ea 82%, #1e1e1e);
+
+  /* Yellow-green brand gradient, top to bottom of the splash */
+  --gradient-0: #1e1e1e;
+  --gradient-1: #424230;
+  --gradient-2: #707048;
+  --gradient-3: #a5a564;
+  --gradient-4: #dcdc81;
+  --gradient-brand: linear-gradient(
+    180deg,
+    var(--gradient-0) 0%,
+    var(--gradient-0) 46%,
+    var(--gradient-1) 58%,
+    var(--gradient-2) 72%,
+    var(--gradient-3) 86%,
+    var(--gradient-4) 100%
+  );
+
+  /* State */
+  --focus: var(--accent);
+  --disabled: var(--surface-input);
+  --disabled-ink: #6c6c6c;
+
+  /* Semantic roles that exist in the export */
+  --semantic-action: var(--accent);
+  --semantic-action-ink: var(--accent-ink);
+  --semantic-link: var(--link);
+}
